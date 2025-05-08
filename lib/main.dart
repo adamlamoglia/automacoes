@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
+import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
@@ -11,7 +15,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Upload PDF',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -28,10 +32,10 @@ class MyApp extends StatelessWidget {
         //
         // This works for code too, not just values: Most code changes can be
         // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Upload PDF para n8n'),
     );
   }
 }
@@ -55,17 +59,72 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  File? _selectedFile;
+  bool _isUploading = false;
+  String _statusMessage = '';
 
-  void _incrementCounter() {
+  Future<void> _pickPDF() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result != null) {
+        setState(() {
+          _selectedFile = File(result.files.single.path!);
+          _statusMessage = 'Arquivo selecionado: ${result.files.single.name}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _statusMessage = 'Erro ao selecionar arquivo: $e';
+      });
+    }
+  }
+
+  Future<void> _uploadToN8n() async {
+    if (_selectedFile == null) {
+      setState(() {
+        _statusMessage = 'Por favor, selecione um arquivo PDF primeiro';
+      });
+      return;
+    }
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _isUploading = true;
+      _statusMessage = 'Enviando arquivo...';
     });
+
+    try {
+      // Substitua esta URL pela URL do seu webhook do n8n
+      final url = Uri.parse('SUA_URL_DO_N8N_AQUI');
+      
+      var request = http.MultipartRequest('POST', url);
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          _selectedFile!.path,
+        ),
+      );
+
+      var response = await request.send();
+      var responseBody = await response.stream.bytesToString();
+
+      setState(() {
+        _isUploading = false;
+        if (response.statusCode == 200) {
+          _statusMessage = 'Arquivo enviado com sucesso!';
+        } else {
+          _statusMessage = 'Erro ao enviar arquivo: ${response.statusCode}';
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isUploading = false;
+        _statusMessage = 'Erro ao enviar arquivo: $e';
+      });
+    }
   }
 
   @override
@@ -105,21 +164,35 @@ class _MyHomePageState extends State<MyHomePage> {
           // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+            ElevatedButton.icon(
+              onPressed: _isUploading ? null : _pickPDF,
+              icon: const Icon(Icons.file_upload),
+              label: const Text('Selecionar PDF'),
             ),
+            const SizedBox(height: 20),
+            if (_selectedFile != null)
+              Text(
+                'Arquivo selecionado: ${_selectedFile!.path.split('/').last}',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _isUploading ? null : _uploadToN8n,
+              icon: const Icon(Icons.send),
+              label: const Text('Enviar para n8n'),
+            ),
+            const SizedBox(height: 20),
+            if (_isUploading)
+              const CircularProgressIndicator(),
+            const SizedBox(height: 20),
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              _statusMessage,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
